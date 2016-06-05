@@ -1,6 +1,6 @@
 .include "macros.s"
 
-	.set KERNEL_STACK, 0xFFFE
+	.set KERNEL_STACK_ADDR, 0xFFFE
 
 	.data
 current: .word 0
@@ -13,7 +13,7 @@ _start:
 	wrs s5, r0
 
 	; Setup kernel stack
-	$movei r7, KERNEL_STACK
+	$movei r7, KERNEL_STACK_ADDR
 
 	$call r5, kernel_main
 
@@ -42,7 +42,7 @@ RSG_handler:
 	st 18(r0), r1
 
 	; Setup kernel stack
-	$movei r7, KERNEL_STACK
+	$movei r7, KERNEL_STACK_ADDR
 
 	; Handle the interrupt/exception
 

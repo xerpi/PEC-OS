@@ -1,5 +1,7 @@
-KOBJS  = kstart.o kuserblob.o kernel.o
-UOBJS  = ustart.o
+KOBJS  = kstart.o kuserblob.o kernel.o libc.o
+UOBJS  = ustart.o umain.o libc.o
+
+CFLAGS = -fno-builtin
 
 all: kernel.code.hex kernel.data.hex kernel.user.hex
 
@@ -11,7 +13,7 @@ user.elf: $(UOBJS)
 	sisa-ld -T user.ld $^ -o $@
 
 .c.o:
-	sisa-gcc -c $< -o $@
+	sisa-gcc $(CFLAGS) -c $< -o $@
 
 .s.o:
 	sisa-as $< -o $@
