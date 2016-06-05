@@ -7,11 +7,26 @@ SECTIONS
 {
 	/* Kernel code */
 	. = 0xC000;
-	.text : { *(.text.start) *(.text) *(.rodata) *(.rodata*) }
+	.text : {
+		_kernel_code_start = ABSOLUTE(.);
+		*(.text.start)
+		*(.text)
+		*(.text*)
+		*(.rodata)
+		*(.rodata*)
+		_kernel_code_end = ABSOLUTE(.);
+	}
 
 	/* Kernel data */
 	. = 0x8000;
-	.data : { *(.data) *(.data*) *(.bss) *(.bss*) }
+	.data : {
+		_kernel_data_start = ABSOLUTE(.);
+		*(.data)
+		*(.data*)
+		*(.bss)
+		*(.bss*)
+		_kernel_data_end = ABSOLUTE(.);
+	}
 
 	/* User */
 	. = 0x1000;

@@ -1,7 +1,7 @@
 KOBJS  = kstart.o kuserblob.o kernel.o libc.o
 UOBJS  = ustart.o umain.o libc.o
 
-CFLAGS = -fno-builtin
+CFLAGS = -O0 -fno-builtin
 
 all: kernel.code.hex kernel.data.hex kernel.user.hex
 

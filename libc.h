@@ -1,6 +1,8 @@
 #ifndef LIBC_H
 #define LIBC_H
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(*a))
+
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
