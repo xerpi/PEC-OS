@@ -8,6 +8,9 @@ static uint8_t phys_mem[NUM_FREE_PAGES];
 static struct list_head freequeue;
 static struct list_head readyqueue;
 
+static struct task_struct *idle_task;
+
+static int last_pid;
 
 void rsi_timer()
 {
@@ -127,6 +130,21 @@ void tlb_setup_for_task(const struct task_struct *task)
 	}
 }
 
+int get_free_PID()
+{
+	return ++last_pid;
+}
+
+void cpu_idle(void)
+{
+	while(1)
+		;
+}
+
+void set_user_pages(struct task_struct *ts) {
+
+}
+
 void init_queues()
 {
 	int i;
@@ -135,14 +153,52 @@ void init_queues()
 	INIT_LIST_HEAD(&readyqueue);
 
 	for (i = 0; i < NUM_TASKS; i++)
-		list_add_tail(&((&task[i])->list), &freequeue);
+		list_add_tail(&(&task[i])->list, &freequeue);
+}
+
+void init_idle(void)
+{
+	idle_task = (struct task_struct *)list_pop_front(&freequeue);
+
+	idle_task->pid = 0;
+	idle_task->reg.pc = (uintptr_t)&cpu_idle;
+	idle_task->reg.r7 = idle_task->reg.r6 = 0; // stack and frame pointers
+	idle_task->reg.psw = 0; // Disables interrupts PSW<1> = 0
+}
+
+void init_task1(void)
+{
+	struct task_struct *ts = (struct task_struct *)list_pop_front(&freequeue);
+
+	ts->pid = 0;
+
+	set_user_pages(ts);
+
+}
+
+void init_sched()
+{
+	int i;
+
+	for (i = 0; i < NUM_TASKS; i++) {
+		task[i].pid = -1;
+		memset(&(&task[i])->regs, 0, sizeof(task[i].regs));
+		memset(&(&task[i])->map, 0, sizeof(task[i].map));
+	}
+
+	init_queues();
+
+	last_pid = 1; // Skip idle and task1 process
 }
 
 int kernel_main()
 {
 	tlb_setup_for_kernel();
 	mm_init();
-	init_queues();
+
+	init_sched();
+	init_idle();
+	init_task1();
 
 	void (*user_entry)() = (void (*)())0x1000;
 
