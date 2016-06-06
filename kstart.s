@@ -1,6 +1,6 @@
 .include "macros.s"
 
-	.set KERNEL_STACK_ADDR, 0xFFFE
+	.set KERNEL_STACK_ADDR, _kernel_data_end
 
 	.data
 current: .word 0

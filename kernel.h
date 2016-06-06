@@ -2,6 +2,7 @@
 #define KERNEL_H
 
 #include "libc.h"
+#include "list.h"
 
 /* Memory map (physical)
  * +--------+_0xFFFF   ^
@@ -11,7 +12,7 @@
  * | KCODE  |_0xC000   ∨
  * |  VGA   |
  * |  VGA   |_0xA000   ^
- * |   ^    |          |
+ * | KSTACK |          |
  * | KDATA  |_0x8000   |
  * |        |          |
  * |        |          |
@@ -26,13 +27,13 @@
 
 /* Memory map (virtual)
  * +--------+_0xFFFF
- * | KSTACK |
- * |   v    |
+ * |        |
+ * |        |
  * |   ^    |
  * | KCODE  |_0xC000
  * |        |
  * |        |_0xA000
- * |   ^    |
+ * | KSTACK |
  * | KDATA  |_0x8000
  * |        |
  * |        |
@@ -98,7 +99,6 @@ struct task_struct {
 		} reg;
 		unsigned int regs[10];
 	};
-	int pid;
 	struct {
 		uint16_t type : 2;
 		uint16_t pfn  : 4;
@@ -107,6 +107,8 @@ struct task_struct {
 		uint16_t v    : 1;
 		uint16_t p    : 1;
 	} map[NUM_FREE_PAGES];
+	int pid;
+	struct list_head list;
 };
 
 #define FREE_FRAME 0
@@ -120,5 +122,7 @@ void mm_free_frame(uint8_t frame);
 /* TLB functions */
 void tlb_setup_for_kernel();
 void tlb_setup_for_task(const struct task_struct *task);
+
+void init_queues();
 
 #endif

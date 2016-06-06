@@ -25,6 +25,9 @@ SECTIONS
 		*(.data*)
 		*(.bss)
 		*(.bss*)
+		/* Give at least 0x100 bytes to the stack */
+		. += 0x100;
+		. = ALIGN(0x1000);
 		_kernel_data_end = ABSOLUTE(.);
 	}
 
