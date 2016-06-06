@@ -61,9 +61,14 @@ void tlb_setup_for_kernel()
 
 	/* Kernel code */
 	for (i = 0; i < NUM_KERNEL_CODE_PAGES; i++, j++) {
+		// ITLB
 		wrpi(j, (KERNEL_CODE_PAGE_START + i) | TLB_ENTRY_BIT_R |
 			TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
 		wrvi(j, KERNEL_CODE_PAGE_START + i);
+		// DTLB code read-only
+		wrpd(j, (KERNEL_CODE_PAGE_START + i) | TLB_ENTRY_BIT_R |
+			TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
+		wrvd(j, KERNEL_CODE_PAGE_START + i);
 	}
 
 	/* Kernel data (and stack) */
