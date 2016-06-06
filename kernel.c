@@ -135,7 +135,7 @@ void init_queues()
 	INIT_LIST_HEAD(&readyqueue);
 
 	for (i = 0; i < NUM_TASKS; i++)
-		list_add_tail(&task[i].list, &freequeue);
+		list_add_tail(&((&task[i])->list), &freequeue);
 }
 
 int kernel_main()
