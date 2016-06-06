@@ -1,6 +1,8 @@
 #include "kernel.h"
 #include "asmutils.h"
 
+struct task_struct *current;
+
 static struct task_struct task[NUM_TASKS];
 
 static uint8_t phys_mem[NUM_FREE_PAGES];
@@ -12,24 +14,44 @@ static struct task_struct *idle_task;
 
 static int last_pid;
 
-void rsi_timer()
+static void RSE_routine(uint8_t exception_id)
 {
-
+	switch (exception_id) {
+	default:
+		break;
+	}
 }
 
-void rsi_keys()
+static void RSI_routine()
 {
+	uint8_t interrupt_id;
 
+	/* Get interrupt ID */
+	__asm__(
+		"getiid %0\n\t"
+		: "=r"(interrupt_id)
+	);
+
+	switch (interrupt_id) {
+	default:
+		break;
+	}
 }
 
-void rsi_switches()
+void RSG_routine()
 {
+	uint8_t exception_id;
 
-}
+	/* Get exception ID */
+	__asm__(
+		"rds %0, s2\n\t"
+		: "=r"(exception_id)
+	);
 
-void rsi_keyboard()
-{
-
+	if (exception_id < 15)
+		RSE_routine(exception_id);
+	else
+		RSI_routine();
 }
 
 void mm_init()
