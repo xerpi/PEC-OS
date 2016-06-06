@@ -216,6 +216,8 @@ void sched_init_task1(void)
 	task1->reg.psw = (1 << 1);
 
 	tlb_setup_for_task(task1);
+
+	current = task1;
 }
 
 void sched_init(void)
