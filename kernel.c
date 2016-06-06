@@ -12,8 +12,6 @@ static uint8_t phys_mem[NUM_FREE_PAGES];
 static struct list_head freequeue;
 static struct list_head readyqueue;
 
-static struct task_struct *idle_task;
-
 static int last_pid;
 
 static void RSE_routine(uint8_t exception_id)
@@ -24,7 +22,7 @@ static void RSE_routine(uint8_t exception_id)
 	}
 }
 
-static void RSI_routine()
+static void RSI_routine(void)
 {
 	uint8_t interrupt_id;
 
@@ -40,7 +38,7 @@ static void RSI_routine()
 	}
 }
 
-void RSG_routine()
+void RSG_routine(void)
 {
 	uint8_t exception_id;
 
@@ -56,20 +54,20 @@ void RSG_routine()
 		RSI_routine();
 }
 
-void mm_init()
+void mm_init(void)
 {
 	int i;
 	for (i = 0; i < ARRAY_SIZE(phys_mem); i++) {
-		phys_mem[i] = FREE_FRAME;
+		phys_mem[i] = FRAME_FREE;
 	}
 }
 
-int mm_alloc_frame()
+int mm_alloc_frame(void)
 {
 	int i;
 	for (i = 0; i < ARRAY_SIZE(phys_mem); i++) {
-		if (phys_mem[i] == FREE_FRAME) {
-			phys_mem[i] = USED_FRAME;
+		if (phys_mem[i] == FRAME_FREE) {
+			phys_mem[i] = FRAME_USED;
 			return i;
 		}
 	}
@@ -78,10 +76,10 @@ int mm_alloc_frame()
 
 void mm_free_frame(uint8_t frame)
 {
-	phys_mem[frame] = FREE_FRAME;
+	phys_mem[frame] = FRAME_FREE;
 }
 
-void tlb_setup_for_kernel()
+void tlb_setup_for_kernel(void)
 {
 	int i;
 	int j = 0;
@@ -102,6 +100,8 @@ void tlb_setup_for_kernel()
 	for (i = 0; i < NUM_KERNEL_DATA_PAGES; i++, j++) {
 		wrpd(j, (KERNEL_DATA_PAGE_START + i) | TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
 		wrvd(j, KERNEL_DATA_PAGE_START + i);
+		/* Mark the physical frame as used */
+		phys_mem[KERNEL_DATA_PAGE_START + i] = FRAME_USED;
 	}
 }
 
@@ -154,18 +154,12 @@ void tlb_setup_for_task(const struct task_struct *task)
 	}
 }
 
-int get_free_PID()
+int sched_get_free_pid(void)
 {
 	return ++last_pid;
 }
 
-
-void set_user_pages(struct task_struct *ts)
-{
-
-}
-
-void init_queues()
+void sched_init_queues(void)
 {
 	int i;
 
@@ -176,26 +170,55 @@ void init_queues()
 		list_add_tail(&(&task[i])->list, &freequeue);
 }
 
-void init_idle(void)
+void sched_init_idle(void)
 {
-	idle_task = (struct task_struct *)list_pop_front(&freequeue);
+	struct task_struct *idle = (struct task_struct *)list_pop_front(&freequeue);
 
-	idle_task->pid = 0;
-	idle_task->reg.pc = (uintptr_t)&cpu_idle;
+	idle->pid = 0;
+	idle->reg.pc = (uintptr_t)&cpu_idle;
 	/* Interrupts enabled, kernel mode */
-	idle_task->reg.psw = 1;
+	idle->reg.psw = (1 << 1) | 1;
 }
 
-void init_task1(void)
+void sched_init_task1(void)
 {
-	struct task_struct *ts = (struct task_struct *)list_pop_front(&freequeue);
+	int i;
+	int j = 0;
+	struct task_struct *task1 = (struct task_struct *)list_pop_front(&freequeue);
 
-	ts->pid = 1;
+	/* Setup code pages */
+	for (i = 0; i < NUM_USER_CODE_PAGES; i++, j++) {
+		task1->map[j].type = PAGE_TYPE_CODE;
+		task1->map[j].vpn = USER_PAGE_START + j;
+		task1->map[j].pfn = USER_PAGE_START + j;
+		task1->map[j].r = 1;
+		task1->map[j].v = 1;
+		task1->map[j].p = 0;
+		/* Mark the physical frame as used */
+		phys_mem[USER_PAGE_START + j] = FRAME_USED;
+	}
 
-	set_user_pages(ts);
+	/* Setup data pages */
+	for (i = 0; i < NUM_USER_DATA_PAGES; i++, j++) {
+		task1->map[j].type = PAGE_TYPE_DATA;
+		task1->map[j].vpn = USER_PAGE_START + j;
+		task1->map[j].pfn = USER_PAGE_START + j;
+		task1->map[j].r = 0;
+		task1->map[j].v = 1;
+		task1->map[j].p = 0;
+		/* Mark the physical frame as used */
+		phys_mem[USER_PAGE_START + j] = FRAME_USED;
+	}
+
+	task1->pid = 1;
+	task1->reg.pc = USER_PAGE_START << PAGE_SHIFT;
+	/* Interrups enabled, user mode */
+	task1->reg.psw = (1 << 1);
+
+	tlb_setup_for_task(task1);
 }
 
-void init_sched()
+void sched_init(void)
 {
 	int i;
 
@@ -205,23 +228,28 @@ void init_sched()
 		memset(&(&task[i])->map, 0, sizeof(task[i].map));
 	}
 
-	init_queues();
+	sched_init_queues();
+	sched_init_idle();
+	sched_init_task1();
 
-	last_pid = 1; // Skip idle and task1 process
+	/* Skip idle and task1 processes */
+	last_pid = 1;
 }
 
-int kernel_main()
+int kernel_main(void)
 {
 	tlb_setup_for_kernel();
 	mm_init();
+	sched_init();
 
-	init_sched();
-	init_idle();
-	init_task1();
+	void (*user_entry)(void) = (void (*)(void))(USER_PAGE_START << PAGE_SHIFT);
 
-	void (*user_entry)() = (void (*)())0x1000;
-
-	user_entry();
+	/* Jump to the user code */
+	__asm__(
+		"wrs s1, %0\n\t"
+		"reti"
+		: : "r"(user_entry)
+	);
 
 	return 0;
 }

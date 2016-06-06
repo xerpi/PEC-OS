@@ -62,6 +62,7 @@ extern void _kernel_data_end;
 #define TLB_ENTRY_BIT_V (1 << 5)
 #define TLB_ENTRY_BIT_P (1 << 6)
 
+#define USER_PAGE_START        0x1
 #define KERNEL_CODE_PAGE_START 0xC
 #define KERNEL_DATA_PAGE_START 0x8
 
@@ -82,6 +83,9 @@ extern void _kernel_data_end;
 #define PAGE_TYPE_UNUSED 0
 #define PAGE_TYPE_CODE   1
 #define PAGE_TYPE_DATA   2
+
+#define FRAME_FREE 0
+#define FRAME_USED 1
 
 struct task_struct {
 	union {
@@ -111,18 +115,23 @@ struct task_struct {
 	struct list_head list;
 };
 
-#define FREE_FRAME 0
-#define USED_FRAME 1
+/* Interrupts/exceptions routine */
+void RSG_routine(void);
 
 /* Memory functions */
-void mm_init();
+void mm_init(void);
 int mm_alloc_frame();
 void mm_free_frame(uint8_t frame);
 
 /* TLB functions */
-void tlb_setup_for_kernel();
+void tlb_setup_for_kernel(void);
 void tlb_setup_for_task(const struct task_struct *task);
 
-void init_queues();
+/* Sched functions */
+int sched_get_free_pid(void);
+void sched_init_queues(void);
+void sched_init_idle(void);
+void sched_init_task1(void);
+void sched_init(void);
 
 #endif
