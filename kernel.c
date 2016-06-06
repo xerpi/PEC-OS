@@ -1,8 +1,12 @@
 #include "kernel.h"
 #include "asmutils.h"
 
-static struct task_struct tasks[NUM_TASKS];
+static struct task_struct task[NUM_TASKS];
+
 static uint8_t phys_mem[NUM_FREE_PAGES];
+
+static struct list_head freequeue;
+static struct list_head readyqueue;
 
 
 void rsi_timer()
@@ -52,24 +56,20 @@ void mm_free_frame(uint8_t frame)
 
 void tlb_setup_for_kernel()
 {
-	int i, j;
+	int i;
+	int j = 0;
 
 	/* Kernel code */
 	for (i = 0; i < NUM_KERNEL_CODE_PAGES; i++, j++) {
-		wrpi(KERNEL_CODE_PAGE_START + j,
-			KERNEL_CODE_PAGE_START | TLB_ENTRY_BIT_R | TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
-
-		wrvi(KERNEL_CODE_PAGE_START + j,
-			KERNEL_CODE_PAGE_START);
+		wrpi(j, (KERNEL_CODE_PAGE_START + i) | TLB_ENTRY_BIT_R |
+			TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
+		wrvi(j, KERNEL_CODE_PAGE_START + i);
 	}
 
-	/* Kernel data */
+	/* Kernel data (and stack) */
 	for (i = 0; i < NUM_KERNEL_DATA_PAGES; i++, j++) {
-		wrpi(KERNEL_DATA_PAGE_START + j,
-			KERNEL_DATA_PAGE_START | TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
-
-		wrvi(KERNEL_DATA_PAGE_START + j,
-			KERNEL_DATA_PAGE_START);
+		wrpd(j, (KERNEL_DATA_PAGE_START + i) | TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
+		wrvd(j, KERNEL_DATA_PAGE_START + i);
 	}
 }
 
@@ -102,17 +102,19 @@ void tlb_setup_for_task(const struct task_struct *task)
 	for (i = 0; i < ARRAY_SIZE(task->map) && num_mapped_pages < TLB_NUM_ENTRIES; i++) {
 		if (task->map[i].type != PAGE_TYPE_UNUSED && i != pc_entry) {
 			if (task->map[i].type == PAGE_TYPE_CODE) {
-				wrpi(i, task->map[i].pfn | (task->map[i].r << 4) |
+				wrpi(num_mapped_pages,
+					task->map[i].pfn | (task->map[i].r << 4) |
 					(task->map[i].v << 5) | (task->map[i].p << 6));
 
-				wrvi(i, task->map[i].vpn);
+				wrvi(num_mapped_pages, task->map[i].vpn);
 
 				num_mapped_pages++;
 			} else if (task->map[i].type == PAGE_TYPE_DATA) {
-				wrpd(i, task->map[i].pfn | (task->map[i].r << 4) |
+				wrpd(num_mapped_pages,
+					task->map[i].pfn | (task->map[i].r << 4) |
 					(task->map[i].v << 5) | (task->map[i].p << 6));
 
-				wrvd(i, task->map[i].vpn);
+				wrvd(num_mapped_pages, task->map[i].vpn);
 
 				num_mapped_pages++;
 			}
@@ -120,10 +122,22 @@ void tlb_setup_for_task(const struct task_struct *task)
 	}
 }
 
+void init_queues()
+{
+	int i;
+
+	INIT_LIST_HEAD(&freequeue);
+	INIT_LIST_HEAD(&readyqueue);
+
+	for (i = 0; i < NUM_TASKS; i++)
+		list_add_tail(&task[i].list, &freequeue);
+}
+
 int kernel_main()
 {
 	tlb_setup_for_kernel();
 	mm_init();
+	init_queues();
 
 	void (*user_entry)() = (void (*)())0x1000;
 
