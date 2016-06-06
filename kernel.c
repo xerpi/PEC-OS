@@ -1,6 +1,8 @@
 #include "kernel.h"
 #include "asmutils.h"
 
+extern void (*cpu_idle)(void);
+
 struct task_struct *current;
 
 static struct task_struct task[NUM_TASKS];
@@ -157,13 +159,9 @@ int get_free_PID()
 	return ++last_pid;
 }
 
-void cpu_idle(void)
-{
-	while(1)
-		;
-}
 
-void set_user_pages(struct task_struct *ts) {
+void set_user_pages(struct task_struct *ts)
+{
 
 }
 
@@ -184,18 +182,17 @@ void init_idle(void)
 
 	idle_task->pid = 0;
 	idle_task->reg.pc = (uintptr_t)&cpu_idle;
-	idle_task->reg.r7 = idle_task->reg.r6 = 0; // stack and frame pointers
-	idle_task->reg.psw = 0; // Disables interrupts PSW<1> = 0
+	/* Interrupts enabled, kernel mode */
+	idle_task->reg.psw = 1;
 }
 
 void init_task1(void)
 {
 	struct task_struct *ts = (struct task_struct *)list_pop_front(&freequeue);
 
-	ts->pid = 0;
+	ts->pid = 1;
 
 	set_user_pages(ts);
-
 }
 
 void init_sched()

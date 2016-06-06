@@ -68,3 +68,8 @@ RSG_handler:
 	ld r0, 0(r0)
 
 	reti
+
+	.global cpu_idle
+cpu_idle:
+	movi r0, 0
+	bz r0, cpu_idle
