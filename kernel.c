@@ -4,6 +4,7 @@
 extern void (*cpu_idle)(void);
 
 struct task_struct *current;
+static struct task_struct *idle_task;
 
 static struct task_struct task[NUM_TASKS];
 
@@ -172,12 +173,12 @@ void sched_init_queues(void)
 
 void sched_init_idle(void)
 {
-	struct task_struct *idle = (struct task_struct *)list_pop_front(&freequeue);
+	idle_task = (struct task_struct *)list_pop_front(&freequeue);
 
-	idle->pid = 0;
-	idle->reg.pc = (uintptr_t)&cpu_idle;
+	idle_task->pid = 0;
+	idle_task->reg.pc = (uintptr_t)&cpu_idle;
 	/* Interrupts enabled, kernel mode */
-	idle->reg.psw = (1 << 1) | 1;
+	idle_task->reg.psw = (1 << 1) | 1;
 }
 
 void sched_init_task1(void)
@@ -240,8 +241,8 @@ void sched_init(void)
 
 int kernel_main(void)
 {
-	tlb_setup_for_kernel();
 	mm_init();
+	tlb_setup_for_kernel();
 	sched_init();
 
 	void (*user_entry)(void) = (void (*)(void))(USER_PAGE_START << PAGE_SHIFT);
