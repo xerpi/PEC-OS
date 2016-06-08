@@ -3,7 +3,7 @@ UOBJS  = ustart.o umain.o libc.o
 
 CFLAGS = -O0 -fno-builtin
 
-all: kernel.code.hex kernel.data.hex kernel.user.hex
+all: kernel.code.bin kernel.data.bin kernel.user.bin kernel.code.hex kernel.data.hex kernel.user.hex
 
 kernel.elf: user.code.bin user.data.bin $(KOBJS)
 	sisa-ld -T kernel.ld $(KOBJS) -o $@

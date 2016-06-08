@@ -129,6 +129,11 @@ void tlb_setup_for_task(const struct task_struct *task)
 
 	wrvi(NUM_KERNEL_PAGES, task->map[pc_entry].vpn);
 
+	wrpd(NUM_KERNEL_PAGES, task->map[pc_entry].pfn | (task->map[pc_entry].r << 4)
+		| (task->map[pc_entry].v << 5) | (task->map[pc_entry].p << 6));
+
+	wrvd(NUM_KERNEL_PAGES, task->map[pc_entry].vpn);
+
 	num_mapped_pages = NUM_KERNEL_PAGES + 1;
 
 	/* Map as most remaining pages as we can */
