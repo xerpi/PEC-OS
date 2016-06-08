@@ -79,6 +79,9 @@ extern void _kernel_data_end;
 
 #define NUM_FREE_PAGES (SRAM_SIZE / PAGE_SIZE)
 
+#define PSW_USER_MODE (0 << 0)
+#define PSW_IE        (1 << 1)
+
 #define NUM_TASKS 10
 
 #define PAGE_TYPE_UNUSED 0

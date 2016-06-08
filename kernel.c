@@ -286,11 +286,12 @@ int kernel_main(void)
 
 	void (*user_entry)(void) = (void (*)(void))(USER_PAGE_START << PAGE_SHIFT);
 
-	/* Jump to the user code */
+	/* Enable interrupts, user mode and jump to the user code */
 	__asm__(
-		"wrs s1, %0\n\t"
+		"wrs s0, %0\n\t"
+		"wrs s1, %1\n\t"
 		"reti"
-		: : "r"(user_entry)
+		: : "r"(PSW_USER_MODE | PSW_IE), "r"(user_entry)
 	);
 
 	return 0;
