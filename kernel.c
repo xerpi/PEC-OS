@@ -87,14 +87,15 @@ void tlb_setup_for_kernel(void)
 
 	/* Kernel code */
 	for (i = 0; i < NUM_KERNEL_CODE_PAGES; i++, j++) {
-		// ITLB
-		wrpi(j, (KERNEL_CODE_PAGE_START + i) | TLB_ENTRY_BIT_R |
+		/* ITLB */
+		wrpi(i, (KERNEL_CODE_PAGE_START + i) | TLB_ENTRY_BIT_R |
 			TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
-		wrvi(j, KERNEL_CODE_PAGE_START + i);
-		// DTLB code read-only
-		wrpd(j, (KERNEL_CODE_PAGE_START + i) | TLB_ENTRY_BIT_R |
+		wrvi(i, KERNEL_CODE_PAGE_START + i);
+
+		/* DTLB code read-only */
+		wrpd(j, (KERNEL_CODE_PAGE_START + j) | TLB_ENTRY_BIT_R |
 			TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
-		wrvd(j, KERNEL_CODE_PAGE_START + i);
+		wrvd(j, KERNEL_CODE_PAGE_START + j);
 	}
 
 	/* Kernel data (and stack) */
@@ -110,7 +111,8 @@ void tlb_setup_for_task(const struct task_struct *task)
 {
 	int i, j;
 	uint8_t pc_entry;
-	uint8_t num_mapped_pages;
+	uint8_t num_mapped_itlb;
+	uint8_t num_mapped_dtlb;
 
 	/* From the entry 0 to NUM_KERNEL_PAGES we have the kernel */
 
@@ -123,40 +125,68 @@ void tlb_setup_for_task(const struct task_struct *task)
 		}
 	}
 
-	/* Map the page where the PC points to (just after the kernel map) */
-	wrpi(NUM_KERNEL_PAGES, task->map[pc_entry].pfn | (task->map[pc_entry].r << 4)
+	/* Map the page where the PC points to (just after the kernel code map) */
+	wrpi(NUM_KERNEL_CODE_PAGES, task->map[pc_entry].pfn | (task->map[pc_entry].r << 4)
 		| (task->map[pc_entry].v << 5) | (task->map[pc_entry].p << 6));
+	wrvi(NUM_KERNEL_CODE_PAGES, task->map[pc_entry].vpn);
 
-	wrvi(NUM_KERNEL_PAGES, task->map[pc_entry].vpn);
-
+	/* Map the PC page to the DTLB  */
 	wrpd(NUM_KERNEL_PAGES, task->map[pc_entry].pfn | (task->map[pc_entry].r << 4)
 		| (task->map[pc_entry].v << 5) | (task->map[pc_entry].p << 6));
-
 	wrvd(NUM_KERNEL_PAGES, task->map[pc_entry].vpn);
 
-	num_mapped_pages = NUM_KERNEL_PAGES + 1;
+	num_mapped_itlb = NUM_KERNEL_CODE_PAGES + 1;
+	num_mapped_dtlb = NUM_KERNEL_PAGES + 1;
 
-	/* Map as most remaining pages as we can */
-	for (i = 0; i < ARRAY_SIZE(task->map) && num_mapped_pages < TLB_NUM_ENTRIES; i++) {
+	/* Map as most remaining code pages as we can */
+	for (i = 0; i < ARRAY_SIZE(task->map); i++) {
 		if (task->map[i].type != PAGE_TYPE_UNUSED && i != pc_entry) {
-			if (task->map[i].type == PAGE_TYPE_CODE) {
-				wrpi(num_mapped_pages,
+			if (task->map[i].type == PAGE_TYPE_CODE &&
+			    num_mapped_itlb < TLB_NUM_ENTRIES) {
+				/* Map this code page to both the I and DTLBs */
+				wrpi(num_mapped_itlb,
+					task->map[i].pfn | (task->map[i].r << 4) |
+					(task->map[i].v << 5) | (task->map[i].p << 6));
+				wrvi(num_mapped_itlb, task->map[i].vpn);
+
+				wrpd(num_mapped_dtlb,
+					task->map[i].pfn | (task->map[i].r << 4) |
+					(task->map[i].v << 5) | (task->map[i].p << 6));
+				wrvd(num_mapped_dtlb, task->map[i].vpn);
+
+				num_mapped_itlb++;
+				num_mapped_dtlb++;
+			} else if (task->map[i].type == PAGE_TYPE_DATA &&
+			           num_mapped_dtlb < TLB_NUM_ENTRIES) {
+				wrpd(num_mapped_dtlb,
 					task->map[i].pfn | (task->map[i].r << 4) |
 					(task->map[i].v << 5) | (task->map[i].p << 6));
 
-				wrvi(num_mapped_pages, task->map[i].vpn);
+				wrvd(num_mapped_dtlb, task->map[i].vpn);
 
-				num_mapped_pages++;
-			} else if (task->map[i].type == PAGE_TYPE_DATA) {
-				wrpd(num_mapped_pages,
-					task->map[i].pfn | (task->map[i].r << 4) |
-					(task->map[i].v << 5) | (task->map[i].p << 6));
-
-				wrvd(num_mapped_pages, task->map[i].vpn);
-
-				num_mapped_pages++;
+				num_mapped_dtlb++;
 			}
 		}
+	}
+
+	/* Try to map the VGA region to the DTLB */
+	for (j = 0, i = num_mapped_dtlb; j < 2 && i < TLB_NUM_ENTRIES; i++, j++) {
+		wrpd(i, (VGA_PAGE_START + j) | TLB_ENTRY_BIT_V);
+		wrvd(i, VGA_PAGE_START + j);
+	}
+
+	num_mapped_dtlb += j;
+
+	/* Empty the rest of the ITLB */
+	for (i = num_mapped_itlb; i < TLB_NUM_ENTRIES; i++) {
+		wrpi(i, 0);
+		wrvi(i, 0);
+	}
+
+	/* Empty the rest of the DTLB */
+	for (i = num_mapped_dtlb; i < TLB_NUM_ENTRIES; i++) {
+		wrpd(i, 0);
+		wrvd(i, 0);
 	}
 }
 
@@ -215,6 +245,10 @@ void sched_init_task1(void)
 		/* Mark the physical frame as used */
 		phys_mem[USER_PAGE_START + j] = FRAME_USED;
 	}
+
+	/* Empty the rest of the entries */
+	for (; j < ARRAY_SIZE(task->map); j++)
+		task1->map[j].type = PAGE_TYPE_UNUSED;
 
 	task1->pid = 1;
 	task1->reg.pc = USER_PAGE_START << PAGE_SHIFT;

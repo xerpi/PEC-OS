@@ -63,8 +63,9 @@ extern void _kernel_data_end;
 #define TLB_ENTRY_BIT_P (1 << 6)
 
 #define USER_PAGE_START        0x1
-#define KERNEL_CODE_PAGE_START 0xC
 #define KERNEL_DATA_PAGE_START 0x8
+#define VGA_PAGE_START         0xA
+#define KERNEL_CODE_PAGE_START 0xC
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)

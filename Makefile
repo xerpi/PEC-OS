@@ -5,7 +5,9 @@ CFLAGS = -O0 -fno-builtin
 
 all: kernel.code.bin kernel.data.bin kernel.user.bin kernel.code.hex kernel.data.hex kernel.user.hex
 
-kernel.elf: user.code.bin user.data.bin $(KOBJS)
+kuserblob.o: user.code.bin user.data.bin
+
+kernel.elf: $(KOBJS)
 	sisa-ld -T kernel.ld $(KOBJS) -o $@
 
 user.elf: $(UOBJS)
