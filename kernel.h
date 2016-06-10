@@ -79,6 +79,25 @@ extern void _kernel_data_end;
 
 #define NUM_FREE_PAGES (SRAM_SIZE / PAGE_SIZE)
 
+#define EXCEPTION_ILLEGAL_INSTR    0x0
+#define EXCEPTION_UNALIGNED_ACCESS 0x1
+#define EXCEPTION_DIVISION_BY_ZERO 0x4
+#define EXCEPTION_ITLB_MISS        0x6
+#define EXCEPTION_DTLB_MISS        0x7
+#define EXCEPTION_ITLB_INVALID     0x8
+#define EXCEPTION_DTLB_INVALID     0x9
+#define EXCEPTION_ITLB_PROTECTED   0xA
+#define EXCEPTION_DTLB_PROTECTED   0xB
+#define EXCEPTION_DTLB_READONLY    0xC
+#define EXCEPTION_PROTECTED_INSTR  0xD
+#define EXCEPTION_CALLS            0xE
+#define EXCEPTION_INTERRUPT        0xF
+
+#define INTERRUPT_TIMER    0x0
+#define INTERRUPT_KEY      0x1
+#define INTERRUPT_SWITCH   0x2
+#define INTERRUPT_KEYBOARD 0x3
+
 #define PSW_USER_MODE (0 << 0)
 #define PSW_IE        (1 << 1)
 
@@ -91,12 +110,7 @@ extern void _kernel_data_end;
 #define FRAME_FREE 0
 #define FRAME_USED 1
 
-#define INTR_TIMER  0
-#define INTR_KEY    1
-#define INTR_SWITCH 2
-#define INTR_KB     3
-
-#define DEFAULT_QUANTUM 10
+#define SCHED_DEFAULT_QUANTUM 10
 
 struct task_struct {
 	union {

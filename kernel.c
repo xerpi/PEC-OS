@@ -9,6 +9,7 @@ static struct task_struct *idle_task;
 static struct task_struct task[NUM_TASKS];
 
 static uint8_t phys_mem[NUM_FREE_PAGES];
+static int num_free_frames;
 
 static struct list_head freequeue;
 static struct list_head readyqueue;
@@ -17,77 +18,75 @@ static uint8_t last_pid;
 static uint8_t quantum_rr;
 static uint16_t sisa_ticks;
 
-static void timer_routine(void)
+static inline struct task_struct *list_pop_front_task_struct(struct list_head *l)
 {
-	++sisa_ticks;
+	return list_entry(list_pop_front(l), struct task_struct, list);
+}
+void timer_routine(void)
+{
+	sisa_ticks++;
 	sched_schedule();
 }
 
-static void key_routine(void)
+void key_routine(void)
 {
 
 }
 
-static void switch_routine(void)
+void switch_routine(void)
 {
 
 }
 
-static void kb_routine(void)
+void kb_routine(void)
 {
 
 }
 
-static void RSE_routine(uint8_t exception_id)
+syscall_value_t sys_fork()
 {
-	switch (exception_id) {
-	default:
-		break;
+	int i;
+	int frame;
+	struct task_struct *new;
+
+	if (num_free_frames < NUM_USER_CODE_PAGES)
+		return -1;
+
+	if (list_empty(&freequeue))
+		return -1;
+
+	new = list_pop_front_task_struct(&freequeue);
+
+	/* Copy current task_struct to the new one */
+	//memcpy(new, current, sizeof(struct task_struct));
+	for (i = 0; i < 10; i++) {
+		new->regs[i] = current->regs[i];
 	}
-}
-
-static void RSI_routine(void)
-{
-	uint8_t interrupt_id;
-
-	/* Get interrupt ID */
-	__asm__(
-		"getiid %0\n\t"
-		: "=r"(interrupt_id)
-	);
-
-	switch (interrupt_id) {
-	case INTR_TIMER:
-		timer_routine();
-		break;
-	case INTR_KEY:
-		key_routine();
-		break;
-	case INTR_SWITCH:
-		switch_routine();
-		break;
-	case INTR_KB:
-		kb_routine();
-		break;
-	default:
-		break;
+	for (i = 0; i < ARRAY_SIZE(current->map); i++) {
+		new->map[i] = current->map[i];
 	}
+
+	/* Allocate new data pages and copy current's to them */
+	/*for (i = 0; i < ARRAY_SIZE(task->map); i++) {
+		if (task->map[i].type == PAGE_TYPE_DATA) {
+			frame = mm_alloc_frame();
+			task->map[i].pfn = frame;
+			memcpy();
+		}
+	}*/
+
+	new->reg.r1 = 0;
+	new->pid = sched_get_free_pid();
+
+	/* Place new to the readyqueue */
+	list_add_tail(&new->list, &readyqueue);
+
+	return new->pid;
 }
 
-void RSG_routine(void)
+syscall_value_t kill(syscall_value_t pid)
 {
-	uint8_t exception_id;
-
-	/* Get exception ID */
-	__asm__(
-		"rds %0, s2\n\t"
-		: "=r"(exception_id)
-	);
-
-	if (exception_id < 15)
-		RSE_routine(exception_id);
-	else
-		RSI_routine();
+	return pid;
 }
 
 void mm_init(void)
@@ -104,6 +103,7 @@ int mm_alloc_frame(void)
 	for (i = 0; i < ARRAY_SIZE(phys_mem); i++) {
 		if (phys_mem[i] == FRAME_FREE) {
 			phys_mem[i] = FRAME_USED;
+			num_free_frames--;
 			return i;
 		}
 	}
@@ -113,6 +113,13 @@ int mm_alloc_frame(void)
 void mm_free_frame(uint8_t frame)
 {
 	phys_mem[frame] = FRAME_FREE;
+	num_free_frames++;
+}
+
+void mm_frame_set_used(uint8_t frame)
+{
+	phys_mem[frame] = FRAME_USED;
+	num_free_frames--;
 }
 
 void tlb_setup_for_kernel(void)
@@ -138,7 +145,7 @@ void tlb_setup_for_kernel(void)
 		wrpd(j, (KERNEL_DATA_PAGE_START + i) | TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
 		wrvd(j, KERNEL_DATA_PAGE_START + i);
 		/* Mark the physical frame as used */
-		phys_mem[KERNEL_DATA_PAGE_START + i] = FRAME_USED;
+		mm_frame_set_used(KERNEL_DATA_PAGE_START + i);
 	}
 }
 
@@ -230,25 +237,29 @@ static int sched_need_switch(void)
 {
 	if (current->pid == 0) {
 		// If executing idle_task and there are other tasks waiting
-		// switch to them
-		if (!list_empty(&readyqueue)) return 1;
-		// Else do nothing
-		else return 0;
+		// switch to them, else do nothing
+		if (!list_empty(&readyqueue))
+			return 1;
+		else
+			return 0;
 	} else {
-		// If not executing idle_task switch only if quantum expired
+		// If not executing idle_task, switch only if quantum expired
 		// Does not mind if only there is one user task
-		--quantum_rr;
-		if (quantum_rr == 0) return 1;
-		else return 0;
+		quantum_rr--;
+		if (quantum_rr == 0)
+			return 1;
+		else
+			return 0;
 	}
 }
 
-static inline void task_switch(struct task_struct *next)
+static void task_switch(struct task_struct *next)
 {
 	current = next;
+	tlb_setup_for_task(current);
 }
 
-static inline void sched_next(struct task_struct *next)
+static void sched_next(struct task_struct *next)
 {
 	// Set quantum specified by the next task
 	quantum_rr = next->quantum;
@@ -257,12 +268,21 @@ static inline void sched_next(struct task_struct *next)
 
 void sched_schedule(void)
 {
+	struct task_struct *next;
+
 	// Update task sched attrib. and check if switch needed
 	if (sched_need_switch()) {
-		// Save current in readyqueue
-		list_add_tail(&(current->list), &readyqueue);
-		struct task_struct *next = (struct task_struct *)list_pop_front(&readyqueue);
-		// Task switch to next
+		if (current->pid != 0) {
+			// Save current in readyqueue
+			list_add_tail(&current->list, &readyqueue);
+			next = list_pop_front_task_struct(&readyqueue);
+		} else {
+			if (list_empty(&readyqueue))
+				next = idle_task;
+			else
+				next = list_pop_front_task_struct(&readyqueue);
+		}
+		/* Task switch to next */
 		sched_next(next);
 	}
 }
@@ -285,12 +305,18 @@ void sched_init_queues(void)
 
 void sched_init_idle(void)
 {
-	idle_task = (struct task_struct *)list_pop_front(&freequeue);
+	int i;
+
+	idle_task = list_pop_front_task_struct(&freequeue);
+
+	/* Empty all the user TLB of the entries */
+	for (i = 0; i < ARRAY_SIZE(task->map); i++)
+		idle_task->map[i].type = PAGE_TYPE_UNUSED;
 
 	idle_task->pid = 0;
 	// Idle task does not have quantum since we task_switch to
 	// any another user task if exists. Anyway we set up to default
-	idle_task->quantum = DEFAULT_QUANTUM;
+	idle_task->quantum = SCHED_DEFAULT_QUANTUM;
 	idle_task->reg.pc = (uintptr_t)&cpu_idle;
 	/* Interrupts enabled, kernel mode */
 	idle_task->reg.psw = (1 << 1) | 1;
@@ -300,7 +326,7 @@ void sched_init_task1(void)
 {
 	int i;
 	int j = 0;
-	struct task_struct *task1 = (struct task_struct *)list_pop_front(&freequeue);
+	struct task_struct *task1 = list_pop_front_task_struct(&freequeue);
 
 	/* Setup code pages */
 	for (i = 0; i < NUM_USER_CODE_PAGES; i++, j++) {
@@ -311,7 +337,7 @@ void sched_init_task1(void)
 		task1->map[j].v = 1;
 		task1->map[j].p = 0;
 		/* Mark the physical frame as used */
-		phys_mem[USER_PAGE_START + j] = FRAME_USED;
+		mm_frame_set_used(USER_PAGE_START + j);
 	}
 
 	/* Setup data pages */
@@ -323,7 +349,7 @@ void sched_init_task1(void)
 		task1->map[j].v = 1;
 		task1->map[j].p = 0;
 		/* Mark the physical frame as used */
-		phys_mem[USER_PAGE_START + j] = FRAME_USED;
+		mm_frame_set_used(USER_PAGE_START + j);
 	}
 
 	/* Empty the rest of the entries */
@@ -331,12 +357,13 @@ void sched_init_task1(void)
 		task1->map[j].type = PAGE_TYPE_UNUSED;
 
 	task1->pid = 1;
-	task1->quantum = DEFAULT_QUANTUM;
-	/* Sched starts with quantum from task1 */
-	quantum_rr = task1->quantum;
+	task1->quantum = SCHED_DEFAULT_QUANTUM;
 	task1->reg.pc = USER_PAGE_START << PAGE_SHIFT;
 	/* Interrups enabled, user mode */
 	task1->reg.psw = (1 << 1);
+
+	/* Sched starts with quantum from task1 */
+	quantum_rr = task1->quantum;
 
 	tlb_setup_for_task(task1);
 
