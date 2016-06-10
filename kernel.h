@@ -91,6 +91,13 @@ extern void _kernel_data_end;
 #define FRAME_FREE 0
 #define FRAME_USED 1
 
+#define INTR_TIMER  0
+#define INTR_KEY    1
+#define INTR_SWITCH 2
+#define INTR_KB     3
+
+#define DEFAULT_QUANTUM 10
+
 struct task_struct {
 	union {
 		struct {
@@ -115,7 +122,8 @@ struct task_struct {
 		uint16_t v    : 1;
 		uint16_t p    : 1;
 	} map[NUM_FREE_PAGES];
-	int pid;
+	uint8_t pid;
+	uint8_t quantum;
 	struct list_head list;
 };
 
@@ -132,7 +140,8 @@ void tlb_setup_for_kernel(void);
 void tlb_setup_for_task(const struct task_struct *task);
 
 /* Sched functions */
-int sched_get_free_pid(void);
+void sched_schedule(void);
+uint8_t sched_get_free_pid(void);
 void sched_init_queues(void);
 void sched_init_idle(void);
 void sched_init_task1(void);

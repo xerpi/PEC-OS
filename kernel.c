@@ -13,7 +13,30 @@ static uint8_t phys_mem[NUM_FREE_PAGES];
 static struct list_head freequeue;
 static struct list_head readyqueue;
 
-static int last_pid;
+static uint8_t last_pid;
+static uint8_t quantum_rr;
+static uint16_t sisa_ticks;
+
+static void timer_routine(void)
+{
+	++sisa_ticks;
+	sched_schedule();
+}
+
+static void key_routine(void)
+{
+
+}
+
+static void switch_routine(void)
+{
+
+}
+
+static void kb_routine(void)
+{
+
+}
 
 static void RSE_routine(uint8_t exception_id)
 {
@@ -34,6 +57,18 @@ static void RSI_routine(void)
 	);
 
 	switch (interrupt_id) {
+	case INTR_TIMER:
+		timer_routine();
+		break;
+	case INTR_KEY:
+		key_routine();
+		break;
+	case INTR_SWITCH:
+		switch_routine();
+		break;
+	case INTR_KB:
+		kb_routine();
+		break;
 	default:
 		break;
 	}
@@ -190,7 +225,49 @@ void tlb_setup_for_task(const struct task_struct *task)
 	}
 }
 
-int sched_get_free_pid(void)
+
+static int sched_need_switch(void)
+{
+	if (current->pid == 0) {
+		// If executing idle_task and there are other tasks waiting
+		// switch to them
+		if (!list_empty(&readyqueue)) return 1;
+		// Else do nothing
+		else return 0;
+	} else {
+		// If not executing idle_task switch only if quantum expired
+		// Does not mind if only there is one user task
+		--quantum_rr;
+		if (quantum_rr == 0) return 1;
+		else return 0;
+	}
+}
+
+static inline void task_switch(struct task_struct *next)
+{
+	current = next;
+}
+
+static inline void sched_next(struct task_struct *next)
+{
+	// Set quantum specified by the next task
+	quantum_rr = next->quantum;
+	task_switch(next);
+}
+
+void sched_schedule(void)
+{
+	// Update task sched attrib. and check if switch needed
+	if (sched_need_switch()) {
+		// Save current in readyqueue
+		list_add_tail(&(current->list), &readyqueue);
+		struct task_struct *next = (struct task_struct *)list_pop_front(&readyqueue);
+		// Task switch to next
+		sched_next(next);
+	}
+}
+
+uint8_t sched_get_free_pid(void)
 {
 	return ++last_pid;
 }
@@ -211,6 +288,9 @@ void sched_init_idle(void)
 	idle_task = (struct task_struct *)list_pop_front(&freequeue);
 
 	idle_task->pid = 0;
+	// Idle task does not have quantum since we task_switch to
+	// any another user task if exists. Anyway we set up to default
+	idle_task->quantum = DEFAULT_QUANTUM;
 	idle_task->reg.pc = (uintptr_t)&cpu_idle;
 	/* Interrupts enabled, kernel mode */
 	idle_task->reg.psw = (1 << 1) | 1;
@@ -251,6 +331,9 @@ void sched_init_task1(void)
 		task1->map[j].type = PAGE_TYPE_UNUSED;
 
 	task1->pid = 1;
+	task1->quantum = DEFAULT_QUANTUM;
+	/* Sched starts with quantum from task1 */
+	quantum_rr = task1->quantum;
 	task1->reg.pc = USER_PAGE_START << PAGE_SHIFT;
 	/* Interrups enabled, user mode */
 	task1->reg.psw = (1 << 1);
