@@ -47,6 +47,8 @@ syscall_value_t sys_fork()
 {
 	int i;
 	int frame;
+	uint8_t pc_entry;
+	uint8_t pc_entry_vpn;
 	struct task_struct *new;
 
 	if (num_free_frames < NUM_USER_CODE_PAGES)
@@ -60,14 +62,40 @@ syscall_value_t sys_fork()
 	/* Copy current task_struct to the new one */
 	memcpy(new, current, sizeof(struct task_struct));
 
-	/* Allocate new data pages and copy current's to them */
-	/*for (i = 0; i < ARRAY_SIZE(task->map); i++) {
-		if (task->map[i].type == PAGE_TYPE_DATA) {
-			frame = mm_alloc_frame();
-			task->map[i].pfn = frame;
-			memcpy();
+	/* Find the page where the PC points to */
+	for (i = 0; i < ARRAY_SIZE(current->map); i++) {
+		if ((current->reg.pc >> PAGE_SHIFT) == current->map[i].vpn &&
+		    current->map[i].v == 1 && current->map[i].type == PAGE_TYPE_CODE) {
+			pc_entry = i;
+			pc_entry_vpn = current->map[i].vpn;
+			break;
 		}
-	}*/
+	}
+
+	/* Allocate new data pages and copy current's to them */
+	for (i = 0; i < ARRAY_SIZE(current->map); i++) {
+		if (current->map[i].type == PAGE_TYPE_DATA) {
+			frame = mm_alloc_frame();
+			new->map[i].pfn = frame;
+
+			/* Map to the current's PC entry the new data
+			 * frame to copy current's data to it */
+			wrpd(NUM_KERNEL_PAGES, frame | TLB_ENTRY_BIT_V |
+				TLB_ENTRY_BIT_P);
+			wrvd(NUM_KERNEL_PAGES, pc_entry_vpn);
+
+			memcpy((void *)(pc_entry_vpn << PAGE_SHIFT),
+				(void *)(new->map[i].vpn << PAGE_SHIFT),
+				PAGE_SIZE);
+		}
+	}
+
+	/* Map the current's PC page back */
+	wrpd(NUM_KERNEL_PAGES, current->map[pc_entry].pfn
+		| (current->map[pc_entry].r << 4)
+		| (current->map[pc_entry].v << 5)
+		| (current->map[pc_entry].p << 6));
+	wrvd(NUM_KERNEL_PAGES, current->map[pc_entry].vpn);
 
 	new->reg.r1 = 0;
 	new->pid = sched_get_free_pid();
@@ -120,6 +148,16 @@ void tlb_setup_for_kernel(void)
 {
 	int i;
 	int j = 0;
+
+	/* Map kernel data the end of the TLB */
+	for (i = 0; i < NUM_KERNEL_DATA_PAGES; i++) {
+		wrpd(6+i, (KERNEL_DATA_PAGE_START + i) | TLB_ENTRY_BIT_V | TLB_ENTRY_BIT_P);
+		wrvd(6+i, KERNEL_DATA_PAGE_START + i);
+	}
+
+	/* Remove the first map of the 8th page */
+	wrvd(3, 0);
+	wrpd(3, 0);
 
 	/* Kernel code */
 	for (i = 0; i < NUM_KERNEL_CODE_PAGES; i++, j++) {
