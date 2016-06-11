@@ -75,7 +75,7 @@ interrupt_handler:
 	add r1, r1, r0
 	ld r1, 0(r1)
 	jal r5, r1
-	bz r3, GSR_end
+	bnz r3, GSR_end
 
 syscall_handler:
 	; Get syscall number
@@ -180,5 +180,5 @@ interrupt_vector_end:
 
 syscall_table_start:
 	.word sys_fork
-	.word kill
+	.word sys_getpid
 syscall_table_end:

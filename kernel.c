@@ -58,13 +58,7 @@ syscall_value_t sys_fork()
 	new = list_pop_front_task_struct(&freequeue);
 
 	/* Copy current task_struct to the new one */
-	//memcpy(new, current, sizeof(struct task_struct));
-	for (i = 0; i < 10; i++) {
-		new->regs[i] = current->regs[i];
-	}
-	for (i = 0; i < ARRAY_SIZE(current->map); i++) {
-		new->map[i] = current->map[i];
-	}
+	memcpy(new, current, sizeof(struct task_struct));
 
 	/* Allocate new data pages and copy current's to them */
 	/*for (i = 0; i < ARRAY_SIZE(task->map); i++) {
@@ -84,9 +78,9 @@ syscall_value_t sys_fork()
 	return new->pid;
 }
 
-syscall_value_t kill(syscall_value_t pid)
+syscall_value_t sys_getpid()
 {
-	return pid;
+	return current->pid;
 }
 
 void mm_init(void)
