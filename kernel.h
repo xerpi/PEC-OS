@@ -110,7 +110,7 @@ extern void _kernel_data_end;
 #define FRAME_FREE 0
 #define FRAME_USED 1
 
-#define SCHED_DEFAULT_QUANTUM 10
+#define SCHED_DEFAULT_QUANTUM 1
 
 struct task_struct {
 	union {
