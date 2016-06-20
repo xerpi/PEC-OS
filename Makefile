@@ -1,5 +1,5 @@
 KOBJS  = kstart.o kuserblob.o kernel.o libc.o list.o
-UOBJS  = ustart.o umain.o libc.o
+UOBJS  = ustart.o umain.o fibonacci.o corre_letras.o
 
 CFLAGS = -O0 -fno-builtin
 
