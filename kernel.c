@@ -168,6 +168,8 @@ void mm_init(void)
 	for (i = 0; i < ARRAY_SIZE(phys_mem); i++) {
 		phys_mem[i] = FRAME_FREE;
 	}
+
+	num_free_frames = NUM_FREE_PAGES;
 }
 
 int mm_alloc_frame(void)
