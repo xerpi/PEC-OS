@@ -162,7 +162,7 @@ exception_vector_start:
 	.word ESR_default_halt   ; 4 Division by zero
 	.word ESR_default_halt   ; 5 Undefined
 	.word ESR_default_halt   ; 6 ITLB miss
-	.word ESR_default_halt   ; 7 DTLB miss
+	.word esr_dtlb_miss      ; 7 DTLB miss
 	.word ESR_default_halt   ; 8 ITLB invalid page
 	.word ESR_default_halt   ; 9 DTLB invalid page
 	.word ESR_default_halt   ; 10 ITLB protected page
@@ -181,4 +181,5 @@ interrupt_vector_end:
 syscall_table_start:
 	.word sys_fork
 	.word sys_getpid
+	.word sys_getticks
 syscall_table_end:

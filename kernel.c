@@ -22,6 +22,53 @@ static inline struct task_struct *list_pop_front_task_struct(struct list_head *l
 {
 	return list_entry(list_pop_front(l), struct task_struct, list);
 }
+
+void esr_dtlb_miss(void)
+{
+	uint8_t i;
+	uint16_t inv_addr;
+	uint8_t inv_page;
+	int8_t map_entry;
+
+	/* S3 contains the invalid address */
+	__asm__(
+		"rds %0, s3\n\t"
+		: "=r"(inv_addr)
+	);
+
+	inv_page = inv_addr >> PAGE_SHIFT;
+
+	/* Check if it's within the VGA range */
+	if (inv_page >= VGA_PAGE_START && inv_page < KERNEL_CODE_PAGE_START) {
+		/* Map the faulting page to the end of the DTLB */
+		wrpd(7, inv_page | TLB_ENTRY_BIT_V);
+		wrvd(7, inv_page);
+	} else {
+		/* Find the map entry of the page that did the dtlb miss */
+		map_entry = -1;
+		for (i = 0; i < ARRAY_SIZE(current->map); i++) {
+			if (inv_page == current->map[i].vpn &&
+			    (current->map[i].type == PAGE_TYPE_DATA)) {
+				map_entry = i;
+				break;
+			}
+		}
+
+		/* If there's no map for such page, kill the process */
+		if (map_entry == -1) {
+
+		}
+
+		/* Map the faulting page to the end of the DTLB */
+		wrpd(7, task->map[map_entry].pfn | (task->map[map_entry].r << 4) |
+			(task->map[map_entry].v << 5) | (task->map[map_entry].p << 6));
+		wrvd(7, task->map[map_entry].vpn);
+	}
+
+	/* Execute the faulting instruction again */
+	current->reg.pc -= 2;
+}
+
 void timer_routine(void)
 {
 	sisa_ticks++;
@@ -109,6 +156,10 @@ syscall_value_t sys_fork()
 syscall_value_t sys_getpid()
 {
 	return current->pid;
+}
+syscall_value_t sys_getticks()
+{
+	return sisa_ticks;
 }
 
 void mm_init(void)
@@ -418,6 +469,8 @@ void sched_init(void)
 
 	/* Skip idle and task1 processes */
 	last_pid = 1;
+
+	sisa_ticks = 0;
 }
 
 int kernel_main(void)

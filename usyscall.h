@@ -28,5 +28,6 @@ static inline int syscall1_i(uint16_t number, uint16_t arg0)
 
 #define fork() ((int)syscall0_i(SYSCALL_FORK))
 #define getpid(pid) ((int)syscall0_i(SYSCALL_GETPID))
+#define getticks() ((unsigned int)syscall0_i(SYSCALL_GETTICKS))
 
 #endif

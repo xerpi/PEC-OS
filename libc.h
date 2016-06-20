@@ -15,8 +15,9 @@ typedef unsigned int size_t;
 typedef unsigned int uintptr_t;
 typedef unsigned int syscall_value_t;
 
-#define SYSCALL_FORK   0
-#define SYSCALL_GETPID 1
+#define SYSCALL_FORK     0
+#define SYSCALL_GETPID   1
+#define SYSCALL_GETTICKS 2
 
 void *memcpy(void *destination, const void *source, size_t num);
 void *memset(void *ptr, int value, size_t num);
