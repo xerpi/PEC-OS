@@ -170,6 +170,7 @@ int main1 (void) {
 
         while (1) {
 	    tics_timer = getticks();
+	    tecla_pulsada = readkb();
 
             switch (tecla_pulsada)
             {

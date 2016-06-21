@@ -18,6 +18,11 @@ static uint8_t last_pid;
 static uint8_t quantum_rr;
 static uint16_t sisa_ticks;
 
+static char kb_buffer[KB_BUFFER_SIZE];
+static uint8_t kb_buffer_head;
+static uint8_t kb_buffer_tail;
+static uint8_t kb_buffer_count;
+
 static inline struct task_struct *list_pop_front_task_struct(struct list_head *l)
 {
 	return list_entry(list_pop_front(l), struct task_struct, list);
@@ -56,13 +61,22 @@ void esr_dtlb_miss(void)
 
 		/* If there's no map for such page, kill the process */
 		if (map_entry == -1) {
+			/* Free data pages */
+			for (i = 0; i < ARRAY_SIZE(current->map); i++) {
+				if (current->map[i].type == PAGE_TYPE_DATA) {
+					mm_free_frame(current->map[i].pfn);
+				}
+			}
 
+			/* Force task switch and add current to freequeue */
+			sched_schedule(&freequeue);
+			return;
 		}
 
 		/* Map the faulting page to the end of the DTLB */
-		wrpd(7, task->map[map_entry].pfn | (task->map[map_entry].r << 4) |
-			(task->map[map_entry].v << 5) | (task->map[map_entry].p << 6));
-		wrvd(7, task->map[map_entry].vpn);
+		wrpd(7, current->map[map_entry].pfn | (current->map[map_entry].r << 4) |
+			(current->map[map_entry].v << 5) | (current->map[map_entry].p << 6));
+		wrvd(7, current->map[map_entry].vpn);
 	}
 
 	/* Execute the faulting instruction again */
@@ -72,7 +86,7 @@ void esr_dtlb_miss(void)
 void timer_routine(void)
 {
 	sisa_ticks++;
-	sched_schedule();
+	sched_run();
 }
 
 void key_routine(void)
@@ -87,10 +101,22 @@ void switch_routine(void)
 
 void kb_routine(void)
 {
+	char key_char;
 
+	if (kb_buffer_count >= KB_BUFFER_SIZE)
+		return;
+
+	__asm__(
+		"in %0, 15\n\t"
+		: "=r"(key_char)
+	);
+
+	kb_buffer[kb_buffer_head] = key_char;
+	kb_buffer_head = (kb_buffer_head + 1) % KB_BUFFER_SIZE;
+	kb_buffer_count++;
 }
 
-syscall_value_t sys_fork()
+syscall_value_t sys_fork(void)
 {
 	int i;
 	int frame;
@@ -153,13 +179,27 @@ syscall_value_t sys_fork()
 	return new->pid;
 }
 
-syscall_value_t sys_getpid()
+syscall_value_t sys_getpid(void)
 {
 	return current->pid;
 }
-syscall_value_t sys_getticks()
+syscall_value_t sys_getticks(void)
 {
 	return sisa_ticks;
+}
+
+syscall_value_t sys_readkb(void)
+{
+	char key;
+
+	if (kb_buffer_count == 0)
+		return 0;
+
+	key = kb_buffer[kb_buffer_tail];
+	kb_buffer_tail = (kb_buffer_tail + 1) % KB_BUFFER_SIZE;
+	kb_buffer_count--;
+
+	return key;
 }
 
 void mm_init(void)
@@ -317,19 +357,27 @@ void tlb_setup_for_task(const struct task_struct *task)
 	}
 }
 
+static void hw_init(void)
+{
+	kb_buffer_head = 0;
+	kb_buffer_tail = 0;
+	kb_buffer_count = 0;
+}
 
-static int sched_need_switch(void)
+static int sched_needs_switch(void)
 {
 	if (current->pid == 0) {
-		// If executing idle_task and there are other tasks waiting
-		// switch to them, else do nothing
+		/* If executing idle_task and there are other tasks waiting
+		 * switch to them, else do nothing.
+		 */
 		if (!list_empty(&readyqueue))
 			return 1;
 		else
 			return 0;
 	} else {
-		// If not executing idle_task, switch only if quantum expired
-		// Does not mind if only there is one user task
+		/* If not executing idle_task, switch only if quantum expired
+		 * Does not mind if only there is one user task
+		 */
 		quantum_rr--;
 		if (quantum_rr == 0)
 			return 1;
@@ -338,37 +386,38 @@ static int sched_need_switch(void)
 	}
 }
 
-static void task_switch(struct task_struct *next)
+static void sched_task_switch(struct task_struct *next)
 {
+	quantum_rr = next->quantum;
 	current = next;
 	tlb_setup_for_task(current);
 }
 
-static void sched_next(struct task_struct *next)
-{
-	// Set quantum specified by the next task
-	quantum_rr = next->quantum;
-	task_switch(next);
-}
-
-void sched_schedule(void)
+void sched_schedule(struct list_head *queue)
 {
 	struct task_struct *next;
 
-	// Update task sched attrib. and check if switch needed
-	if (sched_need_switch()) {
-		if (current->pid != 0) {
-			// Save current in readyqueue
-			list_add_tail(&current->list, &readyqueue);
+	if (current->pid != 0) {
+		/* Save current to the appropriate queue */
+		list_add_tail(&current->list, queue);
+		next = list_pop_front_task_struct(&readyqueue);
+	} else {
+		/* If there's no task in the readyqueue, switch to idle */
+		if (list_empty(&readyqueue))
+			next = idle_task;
+		else
 			next = list_pop_front_task_struct(&readyqueue);
-		} else {
-			if (list_empty(&readyqueue))
-				next = idle_task;
-			else
-				next = list_pop_front_task_struct(&readyqueue);
-		}
-		/* Task switch to next */
-		sched_next(next);
+	}
+
+	/* Task switch to next */
+	sched_task_switch(next);
+}
+
+void sched_run(void)
+{
+	/* Update task sched attrib. and check if switch needed */
+	if (sched_needs_switch()) {
+		sched_schedule(&readyqueue);
 	}
 }
 
@@ -377,7 +426,7 @@ uint8_t sched_get_free_pid(void)
 	return ++last_pid;
 }
 
-void sched_init_queues(void)
+static void sched_init_queues(void)
 {
 	int i;
 
@@ -388,7 +437,7 @@ void sched_init_queues(void)
 		list_add_tail(&(&task[i])->list, &freequeue);
 }
 
-void sched_init_idle(void)
+static void sched_init_idle(void)
 {
 	int i;
 
@@ -407,7 +456,7 @@ void sched_init_idle(void)
 	idle_task->reg.psw = (1 << 1) | 1;
 }
 
-void sched_init_task1(void)
+static void sched_init_task1(void)
 {
 	int i;
 	int j = 0;
@@ -479,6 +528,7 @@ int kernel_main(void)
 {
 	mm_init();
 	tlb_setup_for_kernel();
+	hw_init();
 	sched_init();
 
 	void (*user_entry)(void) = (void (*)(void))(USER_PAGE_START << PAGE_SHIFT);

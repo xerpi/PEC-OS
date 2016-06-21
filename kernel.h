@@ -112,6 +112,8 @@ extern void _kernel_data_end;
 
 #define SCHED_DEFAULT_QUANTUM 1
 
+#define KB_BUFFER_SIZE 32
+
 struct task_struct {
 	union {
 		struct {
@@ -154,11 +156,9 @@ void tlb_setup_for_kernel(void);
 void tlb_setup_for_task(const struct task_struct *task);
 
 /* Sched functions */
-void sched_schedule(void);
-uint8_t sched_get_free_pid(void);
-void sched_init_queues(void);
-void sched_init_idle(void);
-void sched_init_task1(void);
 void sched_init(void);
+void sched_run(void);
+void sched_schedule(struct list_head *queue);
+uint8_t sched_get_free_pid(void);
 
 #endif

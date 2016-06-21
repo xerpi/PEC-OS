@@ -182,4 +182,5 @@ syscall_table_start:
 	.word sys_fork
 	.word sys_getpid
 	.word sys_getticks
+	.word sys_readkb
 syscall_table_end:
