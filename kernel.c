@@ -183,6 +183,7 @@ syscall_value_t sys_getpid(void)
 {
 	return current->pid;
 }
+
 syscall_value_t sys_getticks(void)
 {
 	return sisa_ticks;
@@ -190,14 +191,13 @@ syscall_value_t sys_getticks(void)
 
 syscall_value_t sys_readkb(void)
 {
-	char key;
+	char key = 0;
 
-	if (kb_buffer_count == 0)
-		return 0;
-
-	key = kb_buffer[kb_buffer_tail];
-	kb_buffer_tail = (kb_buffer_tail + 1) % KB_BUFFER_SIZE;
-	kb_buffer_count--;
+	if (kb_buffer_count > 0) {
+		key = kb_buffer[kb_buffer_tail];
+		kb_buffer_tail = (kb_buffer_tail + 1) % KB_BUFFER_SIZE;
+		kb_buffer_count--;
+	}
 
 	return key;
 }
